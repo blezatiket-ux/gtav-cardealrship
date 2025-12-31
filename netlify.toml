@@ -15,9 +15,4 @@
 [functions]
   
   [functions.node_bundle]
-  external_node_modules = ["express", "axios", "express-session", "cors", "memorystore", "serverless-http"]
-
-[dev]
-  port = 8888
-  publish = "public"
-  functions = "functions"
+  external_node_modules = ["express", "axios", "express-session", "cors", "memorystore", "serverless-http", "dotenv"]

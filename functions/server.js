@@ -7,8 +7,7 @@ const serverless = require('serverless-http');
 
 const app = express();
 
-// Load environment variables
-require('dotenv').config();
+// REMOVE THIS LINE: require('dotenv').config(); // Netlify doesn't need dotenv
 
 // Netlify requires session storage adaptation
 const MemoryStore = require('memorystore')(session);
@@ -142,22 +141,6 @@ const defaultVehicles = [
     scale: 1.0,
     position: { x: 0, y: -0.5, z: 0 },
     rotation: { x: 0, y: 0, z: 0 }
-  },
-  {
-    id: 4,
-    model: "zentorno",
-    name: "Pegassi Zentorno",
-    price: 750000,
-    class: "Super",
-    category: "super",
-    seats: 2,
-    topSpeed: "270 km/h",
-    acceleration: "3.5s",
-    description: "Italian hypercar",
-    modelFile: "zentorno.glb",
-    scale: 0.9,
-    position: { x: 0, y: -0.4, z: 0 },
-    rotation: { x: 0, y: 0, z: 0 }
   }
 ];
 
@@ -258,7 +241,7 @@ app.get("/api/login", (req, res) => {
   res.redirect(discordAuthUrl);
 });
 
-// 4. DISCORD CALLBACK (CRITICAL - FIXED)
+// 4. DISCORD CALLBACK
 app.get("/api/callback", async (req, res) => {
   console.log('Discord callback received');
   
@@ -329,13 +312,11 @@ app.get("/api/callback", async (req, res) => {
         );
         console.log("User added to server");
       } catch (serverError) {
-        // User might already be in the server (error code 204)
+        // User might already be in the server
         if (serverError.response?.status !== 204) {
-          console.log("Could not add user to server (might already be member):", serverError.message);
+          console.log("Could not add user to server:", serverError.message);
         }
       }
-    } else {
-      console.log("Skipping server join - bot token or guild ID not configured");
     }
 
     // ======== 4. CHECK/ASSIGN ROLES ========
@@ -377,8 +358,6 @@ app.get("/api/callback", async (req, res) => {
           } catch (roleError) {
             console.log("Could not assign customer role:", roleError.message);
           }
-        } else {
-          console.log("User already has customer role");
         }
       } catch (roleError) {
         console.log("Error checking member roles:", roleError.message);
@@ -396,12 +375,10 @@ app.get("/api/callback", async (req, res) => {
     };
     req.session.role = role;
     req.session.accessToken = accessToken;
-    req.session.refreshToken = refreshToken;
 
     console.log(`Session created for user: ${user.username}, Role: ${role}`);
 
     // ======== 6. REDIRECT TO FRONTEND ========
-    // Save session before redirect
     req.session.save((err) => {
       if (err) {
         console.error("Session save error:", err);
@@ -414,19 +391,9 @@ app.get("/api/callback", async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Authentication error:", {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status
-    });
+    console.error("Authentication error:", error.message);
 
-    let errorMessage = "Authentication failed";
-    if (error.response?.data?.error) {
-      errorMessage = error.response.data.error;
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-
+    const errorMessage = error.response?.data?.error || error.message || "Authentication failed";
     const redirectUrl = `${FRONTEND_URL}?login=error&message=${encodeURIComponent(errorMessage)}`;
     res.redirect(redirectUrl);
   }
