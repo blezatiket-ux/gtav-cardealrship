@@ -1,7 +1,6 @@
 [build]
-  publish = "../frontend"
-  functions = "functions"
-  command = "npm install"
+  publish = "."       # Current directory
+  command = "cp -r ../frontend/* . && npm install"
 
 [[redirects]]
   from = "/api/*"
@@ -14,10 +13,6 @@
   status = 200
 
 [functions]
+  directory = "functions"
   node_bundle = true
   external_node_modules = ["express", "axios", "express-session", "cors", "memorystore"]
-
-[dev]
-  port = 8888
-  publish = "../frontend"
-  functions = "functions"
