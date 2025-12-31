@@ -7,47 +7,85 @@ const serverless = require('serverless-http');
 
 const app = express();
 
+// Load environment variables
+require('dotenv').config();
+
 // Netlify requires session storage adaptation
 const MemoryStore = require('memorystore')(session);
 
-// Middleware
+// ==================== MIDDLEWARE ====================
+// CORS configuration for Netlify
 app.use(cors({
-  origin: [
-    "http://localhost:8000", 
-    "http://127.0.0.1:5500", 
-    "http://localhost:5500",
-    "https://your-site-name.netlify.app",
-    /\.netlify\.app$/
-  ],
-  credentials: true
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      "https://divine-apex.netlify.app",
+      "https://*.netlify.app",
+      "http://localhost:8888",
+      "http://localhost:8000",
+      "http://localhost:3000"
+    ];
+    
+    if (allowedOrigins.some(allowed => origin === allowed || origin.endsWith(allowed.replace('*', '')))) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
+
+// Preflight requests
+app.options('*', cors());
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Session configuration for Netlify
 app.use(session({
   store: new MemoryStore({
     checkPeriod: 86400000 // 24 hours
   }),
-  secret: process.env.SESSION_SECRET || "gtav-dealership-secret-key-2023",
+  name: 'gtav_session',
+  secret: process.env.SESSION_SECRET || "gtav-dealership-secret-key-2023-change-this",
   resave: false,
   saveUninitialized: false,
+  rolling: true,
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
+    secure: true, // MUST be true for Netlify (HTTPS)
     httpOnly: true,
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    sameSite: 'none', // MUST be 'none' for cross-site cookies
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    domain: '.netlify.app' // Important for Netlify
   }
 }));
 
-// Environment variables
+// ==================== ENVIRONMENT VARIABLES ====================
 const {
   DISCORD_CLIENT_ID,
   DISCORD_CLIENT_SECRET,
   DISCORD_BOT_TOKEN,
   DISCORD_GUILD_ID,
-  // CHANGE THESE LINES:
   REDIRECT_URI = "https://divine-apex.netlify.app/.netlify/functions/server/callback",
-  FRONTEND_URL = "https://divine-apex.netlify.app"
-} = process.env;;
+  FRONTEND_URL = "https://divine-apex.netlify.app",
+  DISCORD_WEBHOOK_URL,
+  NODE_ENV = 'production'
+} = process.env;
+
+// Log environment check (will appear in Netlify logs)
+console.log('Environment check:', {
+  has_client_id: !!DISCORD_CLIENT_ID,
+  has_client_secret: !!DISCORD_CLIENT_SECRET,
+  has_bot_token: !!DISCORD_BOT_TOKEN,
+  has_guild_id: !!DISCORD_GUILD_ID,
+  redirect_uri: REDIRECT_URI,
+  frontend_url: FRONTEND_URL,
+  node_env: NODE_ENV
+});
 
 const ROLES = {
   OWNER: process.env.ROLE_ID_OWNER || "ROLE_ID_OWNER",
@@ -55,7 +93,7 @@ const ROLES = {
   CUSTOMER: process.env.ROLE_ID_CUSTOMER || "ROLE_ID_CUSTOMER"
 };
 
-// Default vehicle data
+// ==================== VEHICLE DATA ====================
 const defaultVehicles = [
   {
     id: 1,
@@ -104,10 +142,26 @@ const defaultVehicles = [
     scale: 1.0,
     position: { x: 0, y: -0.5, z: 0 },
     rotation: { x: 0, y: 0, z: 0 }
+  },
+  {
+    id: 4,
+    model: "zentorno",
+    name: "Pegassi Zentorno",
+    price: 750000,
+    class: "Super",
+    category: "super",
+    seats: 2,
+    topSpeed: "270 km/h",
+    acceleration: "3.5s",
+    description: "Italian hypercar",
+    modelFile: "zentorno.glb",
+    scale: 0.9,
+    position: { x: 0, y: -0.4, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 }
   }
 ];
 
-// Middleware to check authentication
+// ==================== MIDDLEWARE FUNCTIONS ====================
 const requireAuth = (req, res, next) => {
   if (!req.session.user) {
     return res.status(401).json({ error: "Authentication required" });
@@ -115,24 +169,6 @@ const requireAuth = (req, res, next) => {
   next();
 };
 
-// Check authentication status
-app.get("/api/auth/status", (req, res) => {
-  if (req.session.user) {
-    res.json({
-      authenticated: true,
-      user: req.session.user,
-      role: req.session.role,
-      permissions: getPermissions(req.session.role)
-    });
-  } else {
-    res.json({ 
-      authenticated: false,
-      permissions: { canOrder: false, canManage: false }
-    });
-  }
-});
-
-// Get permissions based on role
 function getPermissions(role) {
   const permissions = {
     canOrder: false,
@@ -157,122 +193,199 @@ function getPermissions(role) {
     case 'customer':
       permissions.canOrder = true;
       break;
+    default:
+      permissions.canOrder = false;
   }
 
   return permissions;
 }
 
-// Login endpoint
-app.get("/api/login", (req, res) => {
-  const url = `https://discord.com/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}` +
-    `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-    `&response_type=code&scope=identify guilds guilds.join` +
-    `&prompt=none`;
-  
-  res.redirect(url);
+// ==================== ROUTES ====================
+
+// 1. DEBUG ENDPOINT (Check if server is working)
+app.get("/api/debug", (req, res) => {
+  res.json({
+    status: "server is running",
+    session: req.sessionID ? "session exists" : "no session",
+    user: req.session.user || "no user",
+    env: {
+      client_id_set: !!DISCORD_CLIENT_ID,
+      client_secret_set: !!DISCORD_CLIENT_SECRET,
+      bot_token_set: !!DISCORD_BOT_TOKEN,
+      guild_id_set: !!DISCORD_GUILD_ID,
+      node_env: NODE_ENV
+    },
+    timestamp: new Date().toISOString(),
+    cookies: req.headers.cookie || "no cookies"
+  });
 });
 
-// Callback endpoint
+// 2. AUTH STATUS
+app.get("/api/auth/status", (req, res) => {
+  console.log('Auth status check:', req.sessionID);
+  
+  if (req.session.user) {
+    res.json({
+      authenticated: true,
+      user: req.session.user,
+      role: req.session.role,
+      permissions: getPermissions(req.session.role)
+    });
+  } else {
+    res.json({ 
+      authenticated: false,
+      permissions: { canOrder: false, canManage: false }
+    });
+  }
+});
+
+// 3. LOGIN ENDPOINT
+app.get("/api/login", (req, res) => {
+  console.log('Login endpoint hit');
+  
+  if (!DISCORD_CLIENT_ID) {
+    return res.status(500).send('Discord Client ID not configured. Please set DISCORD_CLIENT_ID environment variable.');
+  }
+
+  const discordAuthUrl = `https://discord.com/oauth2/authorize` +
+    `?client_id=${DISCORD_CLIENT_ID}` +
+    `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+    `&response_type=code` +
+    `&scope=identify%20guilds%20guilds.join` +
+    `&prompt=none`;
+  
+  console.log('Redirecting to Discord:', discordAuthUrl);
+  res.redirect(discordAuthUrl);
+});
+
+// 4. DISCORD CALLBACK (CRITICAL - FIXED)
 app.get("/api/callback", async (req, res) => {
+  console.log('Discord callback received');
+  
   try {
     const code = req.query.code;
+    const error = req.query.error;
+    const errorDescription = req.query.error_description;
+
+    if (error) {
+      console.error('Discord OAuth error:', error, errorDescription);
+      throw new Error(`Discord OAuth error: ${errorDescription || error}`);
+    }
 
     if (!code) {
+      console.error('No authorization code provided');
       throw new Error("No authorization code provided");
     }
 
-    console.log("Received authorization code");
+    console.log("Authorization code received");
 
-    // Exchange code for access token
-    const tokenRes = await axios.post(
+    // ======== 1. EXCHANGE CODE FOR TOKEN ========
+    const tokenResponse = await axios.post(
       "https://discord.com/api/oauth2/token",
       new URLSearchParams({
         client_id: DISCORD_CLIENT_ID,
         client_secret: DISCORD_CLIENT_SECRET,
         grant_type: "authorization_code",
-        code,
+        code: code,
         redirect_uri: REDIRECT_URI
       }),
-      { 
-        headers: { 
+      {
+        headers: {
           "Content-Type": "application/x-www-form-urlencoded",
           "Accept-Encoding": "application/json"
         }
       }
     );
 
-    const accessToken = tokenRes.data.access_token;
-    console.log("Got access token");
+    const accessToken = tokenResponse.data.access_token;
+    const refreshToken = tokenResponse.data.refresh_token;
+    console.log("Access token received");
 
-    // Get user info
-    const userRes = await axios.get("https://discord.com/api/users/@me", {
-      headers: { 
+    // ======== 2. GET USER INFO ========
+    const userResponse = await axios.get("https://discord.com/api/users/@me", {
+      headers: {
         Authorization: `Bearer ${accessToken}`,
         "Accept-Encoding": "application/json"
       }
     });
 
-    const user = userRes.data;
-    console.log(`User authenticated: ${user.username}`);
+    const user = userResponse.data;
+    console.log(`User authenticated: ${user.username}#${user.discriminator} (ID: ${user.id})`);
 
-    // Add user to Discord server
-    try {
-      await axios.put(
-        `https://discord.com/api/guilds/${DISCORD_GUILD_ID}/members/${user.id}`,
-        { access_token: accessToken },
-        {
-          headers: {
-            Authorization: `Bot ${DISCORD_BOT_TOKEN}`,
-            "Content-Type": "application/json"
+    // ======== 3. ADD USER TO DISCORD SERVER ========
+    if (DISCORD_BOT_TOKEN && DISCORD_GUILD_ID) {
+      try {
+        await axios.put(
+          `https://discord.com/api/guilds/${DISCORD_GUILD_ID}/members/${user.id}`,
+          {
+            access_token: accessToken
+          },
+          {
+            headers: {
+              Authorization: `Bot ${DISCORD_BOT_TOKEN}`,
+              "Content-Type": "application/json"
+            }
           }
+        );
+        console.log("User added to server");
+      } catch (serverError) {
+        // User might already be in the server (error code 204)
+        if (serverError.response?.status !== 204) {
+          console.log("Could not add user to server (might already be member):", serverError.message);
         }
-      );
-      console.log("User added to server");
-    } catch (error) {
-      console.log("User might already be in server:", error.message);
-    }
-
-    // Get member roles
-    let role = "customer";
-    try {
-      const memberRes = await axios.get(
-        `https://discord.com/api/guilds/${DISCORD_GUILD_ID}/members/${user.id}`,
-        { 
-          headers: { 
-            Authorization: `Bot ${DISCORD_BOT_TOKEN}`,
-            "Accept-Encoding": "application/json"
-          } 
-        }
-      );
-
-      const memberRoles = memberRes.data.roles || [];
-      
-      if (memberRoles.includes(ROLES.OWNER)) {
-        role = "owner";
-        console.log("User is owner");
-      } else if (memberRoles.includes(ROLES.MANAGER)) {
-        role = "manager";
-        console.log("User is manager");
-      } else if (!memberRoles.includes(ROLES.CUSTOMER)) {
-        // Assign customer role if not present
-        try {
-          await axios.put(
-            `https://discord.com/api/guilds/${DISCORD_GUILD_ID}/members/${user.id}/roles/${ROLES.CUSTOMER}`,
-            {},
-            { headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}` } }
-          );
-          console.log("Assigned customer role");
-        } catch (roleError) {
-          console.log("Error assigning customer role:", roleError.message);
-        }
-      } else {
-        console.log("User already has customer role");
       }
-    } catch (error) {
-      console.log("Error fetching member roles:", error.message);
+    } else {
+      console.log("Skipping server join - bot token or guild ID not configured");
     }
 
-    // Store user in session
+    // ======== 4. CHECK/ASSIGN ROLES ========
+    let role = "customer";
+    
+    if (DISCORD_BOT_TOKEN && DISCORD_GUILD_ID) {
+      try {
+        const memberResponse = await axios.get(
+          `https://discord.com/api/guilds/${DISCORD_GUILD_ID}/members/${user.id}`,
+          {
+            headers: {
+              Authorization: `Bot ${DISCORD_BOT_TOKEN}`,
+              "Accept-Encoding": "application/json"
+            }
+          }
+        );
+
+        const memberRoles = memberResponse.data.roles || [];
+        
+        if (memberRoles.includes(ROLES.OWNER)) {
+          role = "owner";
+          console.log("User is owner");
+        } else if (memberRoles.includes(ROLES.MANAGER)) {
+          role = "manager";
+          console.log("User is manager");
+        } else if (!memberRoles.includes(ROLES.CUSTOMER)) {
+          // Assign customer role if not present
+          try {
+            await axios.put(
+              `https://discord.com/api/guilds/${DISCORD_GUILD_ID}/members/${user.id}/roles/${ROLES.CUSTOMER}`,
+              {},
+              { 
+                headers: { 
+                  Authorization: `Bot ${DISCORD_BOT_TOKEN}` 
+                } 
+              }
+            );
+            console.log("Assigned customer role");
+          } catch (roleError) {
+            console.log("Could not assign customer role:", roleError.message);
+          }
+        } else {
+          console.log("User already has customer role");
+        }
+      } catch (roleError) {
+        console.log("Error checking member roles:", roleError.message);
+      }
+    }
+
+    // ======== 5. CREATE SESSION ========
     req.session.user = {
       id: user.id,
       username: user.username,
@@ -283,36 +396,71 @@ app.get("/api/callback", async (req, res) => {
     };
     req.session.role = role;
     req.session.accessToken = accessToken;
+    req.session.refreshToken = refreshToken;
 
     console.log(`Session created for user: ${user.username}, Role: ${role}`);
 
-    // Redirect back to frontend
-    res.redirect(`${FRONTEND_URL}?login=success&username=${encodeURIComponent(user.username)}&role=${role}`);
-    
+    // ======== 6. REDIRECT TO FRONTEND ========
+    // Save session before redirect
+    req.session.save((err) => {
+      if (err) {
+        console.error("Session save error:", err);
+        return res.redirect(`${FRONTEND_URL}?login=error&message=Session+error`);
+      }
+      
+      const redirectUrl = `${FRONTEND_URL}?login=success&username=${encodeURIComponent(user.username)}&role=${role}`;
+      console.log("Redirecting to:", redirectUrl);
+      res.redirect(redirectUrl);
+    });
+
   } catch (error) {
-    console.error("Authentication error:", error.response?.data || error.message);
-    res.redirect(`${FRONTEND_URL}?login=error&message=${encodeURIComponent(error.message)}`);
+    console.error("Authentication error:", {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status
+    });
+
+    let errorMessage = "Authentication failed";
+    if (error.response?.data?.error) {
+      errorMessage = error.response.data.error;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+
+    const redirectUrl = `${FRONTEND_URL}?login=error&message=${encodeURIComponent(errorMessage)}`;
+    res.redirect(redirectUrl);
   }
 });
 
-// Logout endpoint
+// 5. LOGOUT
 app.get("/api/logout", (req, res) => {
   const username = req.session.user?.username || "User";
+  
   req.session.destroy((err) => {
     if (err) {
-      console.error("Error destroying session:", err);
+      console.error("Session destroy error:", err);
     }
+    
     console.log(`User logged out: ${username}`);
+    
+    // Clear session cookie
+    res.clearCookie('gtav_session', {
+      domain: '.netlify.app',
+      path: '/',
+      secure: true,
+      sameSite: 'none'
+    });
+    
     res.redirect(`${FRONTEND_URL}?logout=success`);
   });
 });
 
-// Get vehicles
+// 6. VEHICLES
 app.get("/api/vehicles", (req, res) => {
   res.json(defaultVehicles);
 });
 
-// Submit order
+// 7. SUBMIT ORDER
 app.post("/api/orders", requireAuth, async (req, res) => {
   try {
     const order = req.body;
@@ -329,8 +477,7 @@ app.post("/api/orders", requireAuth, async (req, res) => {
     }
 
     // Send to Discord webhook if configured
-    const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
-    if (webhookUrl) {
+    if (DISCORD_WEBHOOK_URL) {
       try {
         const embed = {
           title: "🚗 New Vehicle Order",
@@ -381,7 +528,7 @@ app.post("/api/orders", requireAuth, async (req, res) => {
           }
         };
 
-        await axios.post(webhookUrl, {
+        await axios.post(DISCORD_WEBHOOK_URL, {
           content: role === "customer" ? `<@&${ROLES.MANAGER}> <@&${ROLES.OWNER}>` : '',
           embeds: [embed]
         });
@@ -415,17 +562,29 @@ app.post("/api/orders", requireAuth, async (req, res) => {
   }
 });
 
-// Health check endpoint
+// 8. HEALTH CHECK
 app.get("/api/health", (req, res) => {
   res.json({ 
     status: "healthy",
     service: "GTA V Showroom",
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: NODE_ENV,
+    version: "1.0.0"
   });
 });
 
-// Error handling middleware
+// 9. TEST SESSION
+app.get("/api/test-session", (req, res) => {
+  req.session.test = req.session.test ? req.session.test + 1 : 1;
+  res.json({
+    sessionId: req.sessionID,
+    testValue: req.session.test,
+    user: req.session.user || "No user",
+    cookies: req.headers.cookie
+  });
+});
+
+// ==================== ERROR HANDLING ====================
 app.use((err, req, res, next) => {
   console.error("Server error:", err);
   res.status(500).json({ 
@@ -434,5 +593,14 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Export for Netlify Functions
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    error: "Route not found",
+    path: req.path,
+    method: req.method
+  });
+});
+
+// ==================== EXPORT FOR NETLIFY ====================
 module.exports.handler = serverless(app);
