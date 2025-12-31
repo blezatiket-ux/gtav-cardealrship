@@ -1,0 +1,16 @@
+{
+  "name": "gtav-showroom",
+  "version": "1.0.0",
+  "description": "GTA V Showroom with Discord Auth",
+  "scripts": {
+    "start": "netlify dev"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "axios": "^1.6.2",
+    "express-session": "^1.17.3",
+    "cors": "^2.8.5",
+    "memorystore": "^1.6.7",
+    "serverless-http": "^3.0.3"
+  }
+}

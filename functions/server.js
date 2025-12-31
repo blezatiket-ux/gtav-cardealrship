@@ -44,9 +44,10 @@ const {
   DISCORD_CLIENT_SECRET,
   DISCORD_BOT_TOKEN,
   DISCORD_GUILD_ID,
-  REDIRECT_URI = "https://your-site-name.netlify.app/.netlify/functions/server/callback",
-  FRONTEND_URL = "https://your-site-name.netlify.app"
-} = process.env;
+  // CHANGE THESE LINES:
+  REDIRECT_URI = "https://divine-apex.netlify.app/.netlify/functions/server/callback",
+  FRONTEND_URL = "https://divine-apex.netlify.app"
+} = process.env;;
 
 const ROLES = {
   OWNER: process.env.ROLE_ID_OWNER || "ROLE_ID_OWNER",
