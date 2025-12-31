@@ -1,26 +1,39 @@
-// server.js - Complete Discord Authentication Server
-const express = require("express");
-const axios = require("axios");
-const session = require("express-session");
-const cors = require("cors");
-require("dotenv").config();
+// Netlify Function - server.js
+const express = require('express');
+const axios = require('axios');
+const session = require('express-session');
+const cors = require('cors');
+const serverless = require('serverless-http');
 
 const app = express();
 
+// Netlify requires session storage adaptation
+const MemoryStore = require('memorystore')(session);
+
 // Middleware
 app.use(cors({
-  origin: ["http://localhost:8000", "http://127.0.0.1:5500", "http://localhost:5500"],
+  origin: [
+    "http://localhost:8000", 
+    "http://127.0.0.1:5500", 
+    "http://localhost:5500",
+    "https://your-site-name.netlify.app",
+    /\.netlify\.app$/
+  ],
   credentials: true
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
+  store: new MemoryStore({
+    checkPeriod: 86400000 // 24 hours
+  }),
   secret: process.env.SESSION_SECRET || "gtav-dealership-secret-key-2023",
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false, // Set to true in production with HTTPS
+    secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));
@@ -31,9 +44,8 @@ const {
   DISCORD_CLIENT_SECRET,
   DISCORD_BOT_TOKEN,
   DISCORD_GUILD_ID,
-  REDIRECT_URI = "http://localhost:3001/callback",
-  FRONTEND_URL = "http://localhost:8000",
-  PORT = 3001
+  REDIRECT_URI = "https://your-site-name.netlify.app/.netlify/functions/server/callback",
+  FRONTEND_URL = "https://your-site-name.netlify.app"
 } = process.env;
 
 const ROLES = {
@@ -42,7 +54,7 @@ const ROLES = {
   CUSTOMER: process.env.ROLE_ID_CUSTOMER || "ROLE_ID_CUSTOMER"
 };
 
-// Default vehicle data (for demo purposes)
+// Default vehicle data
 const defaultVehicles = [
   {
     id: 1,
@@ -90,54 +102,6 @@ const defaultVehicles = [
     modelFile: "comet2.glb",
     scale: 1.0,
     position: { x: 0, y: -0.5, z: 0 },
-    rotation: { x: 0, y: 0, z: 0 }
-  },
-  {
-    id: 4,
-    model: "baller",
-    name: "Gallivanter Baller",
-    price: 300000,
-    class: "SUV",
-    category: "suv",
-    seats: 4,
-    topSpeed: "190 km/h",
-    acceleration: "6.5s",
-    description: "Luxury SUV",
-    modelFile: "baller.glb",
-    scale: 1.2,
-    position: { x: 0, y: -0.7, z: 0 },
-    rotation: { x: 0, y: 0, z: 0 }
-  },
-  {
-    id: 5,
-    model: "dominator",
-    name: "Vapid Dominator",
-    price: 320000,
-    class: "Muscle",
-    category: "muscle",
-    seats: 2,
-    topSpeed: "220 km/h",
-    acceleration: "5.0s",
-    description: "Classic muscle car",
-    modelFile: "dominator.glb",
-    scale: 1.1,
-    position: { x: 0, y: -0.6, z: 0 },
-    rotation: { x: 0, y: 0, z: 0 }
-  },
-  {
-    id: 6,
-    model: "zentorno",
-    name: "Pegassi Zentorno",
-    price: 750000,
-    class: "Super",
-    category: "super",
-    seats: 2,
-    topSpeed: "260 km/h",
-    acceleration: "3.2s",
-    description: "Italian supercar",
-    modelFile: "zentorno.glb",
-    scale: 0.9,
-    position: { x: 0, y: -0.4, z: 0 },
     rotation: { x: 0, y: 0, z: 0 }
   }
 ];
@@ -198,16 +162,17 @@ function getPermissions(role) {
 }
 
 // Login endpoint
-app.get("/login", (req, res) => {
+app.get("/api/login", (req, res) => {
   const url = `https://discord.com/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}` +
     `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-    `&response_type=code&scope=identify guilds guilds.join`;
+    `&response_type=code&scope=identify guilds guilds.join` +
+    `&prompt=none`;
   
   res.redirect(url);
 });
 
 // Callback endpoint
-app.get("/callback", async (req, res) => {
+app.get("/api/callback", async (req, res) => {
   try {
     const code = req.query.code;
 
@@ -247,7 +212,7 @@ app.get("/callback", async (req, res) => {
     });
 
     const user = userRes.data;
-    console.log(`User authenticated: ${user.username}#${user.discriminator}`);
+    console.log(`User authenticated: ${user.username}`);
 
     // Add user to Discord server
     try {
@@ -263,7 +228,7 @@ app.get("/callback", async (req, res) => {
       );
       console.log("User added to server");
     } catch (error) {
-      console.log("User might already be in server or error adding:", error.message);
+      console.log("User might already be in server:", error.message);
     }
 
     // Get member roles
@@ -320,35 +285,33 @@ app.get("/callback", async (req, res) => {
 
     console.log(`Session created for user: ${user.username}, Role: ${role}`);
 
-    // Redirect back to frontend with success message
-    res.redirect(`${FRONTEND_URL}/index.html?login=success&username=${encodeURIComponent(user.username)}&role=${role}`);
+    // Redirect back to frontend
+    res.redirect(`${FRONTEND_URL}?login=success&username=${encodeURIComponent(user.username)}&role=${role}`);
     
   } catch (error) {
     console.error("Authentication error:", error.response?.data || error.message);
-    res.redirect(`${FRONTEND_URL}/index.html?login=error&message=${encodeURIComponent(error.message)}`);
+    res.redirect(`${FRONTEND_URL}?login=error&message=${encodeURIComponent(error.message)}`);
   }
 });
 
 // Logout endpoint
-app.get("/logout", (req, res) => {
+app.get("/api/logout", (req, res) => {
   const username = req.session.user?.username || "User";
   req.session.destroy((err) => {
     if (err) {
       console.error("Error destroying session:", err);
     }
     console.log(`User logged out: ${username}`);
-    res.redirect(`${FRONTEND_URL}/index.html?logout=success`);
+    res.redirect(`${FRONTEND_URL}?logout=success`);
   });
 });
 
-// Get vehicles (protected)
+// Get vehicles
 app.get("/api/vehicles", (req, res) => {
-  // Allow access to vehicles without authentication for demo
-  // In production, you might want to protect this
   res.json(defaultVehicles);
 });
 
-// Submit order (protected)
+// Submit order
 app.post("/api/orders", requireAuth, async (req, res) => {
   try {
     const order = req.body;
@@ -356,7 +319,6 @@ app.post("/api/orders", requireAuth, async (req, res) => {
     const role = req.session.role;
 
     console.log("New order received from:", user.username);
-    console.log("Order details:", order);
 
     // Validate order data
     if (!order.vehicle_model || !order.vehicle_name || !order.price) {
@@ -369,16 +331,6 @@ app.post("/api/orders", requireAuth, async (req, res) => {
     const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
     if (webhookUrl) {
       try {
-        // Create role mentions
-        let mention = "";
-        if (role === "customer") {
-          // Notify managers and owners for customer orders
-          mention = `<@&${ROLES.MANAGER}> <@&${ROLES.OWNER}>`;
-        } else if (role === "manager") {
-          // Notify owners for manager orders
-          mention = `<@&${ROLES.OWNER}>`;
-        }
-
         const embed = {
           title: "🚗 New Vehicle Order",
           color: role === "owner" ? 0xff0000 : role === "manager" ? 0xffa500 : 0x00ff00,
@@ -409,13 +361,8 @@ app.post("/api/orders", requireAuth, async (req, res) => {
               inline: true 
             },
             { 
-              name: "Player Phone", 
-              value: order.player_phone || "Not provided", 
-              inline: true 
-            },
-            { 
               name: "Colors", 
-              value: `**Primary:** ${order.primary_color}\n**Secondary:** ${order.secondary_color}\n**Pearl:** ${order.pearl_color}` 
+              value: `**Primary:** ${order.primary_color}\n**Secondary:** ${order.secondary_color}\n**Accent:** ${order.accent_color}` 
             },
             { 
               name: "Special Requests", 
@@ -424,7 +371,7 @@ app.post("/api/orders", requireAuth, async (req, res) => {
           ],
           timestamp: new Date().toISOString(),
           footer: { 
-            text: "GTA V Dealership System • Order ID: " + Date.now() 
+            text: "GTA V Showroom • Order ID: " + Date.now() 
           },
           thumbnail: {
             url: user.avatar ? 
@@ -434,19 +381,16 @@ app.post("/api/orders", requireAuth, async (req, res) => {
         };
 
         await axios.post(webhookUrl, {
-          content: mention,
+          content: role === "customer" ? `<@&${ROLES.MANAGER}> <@&${ROLES.OWNER}>` : '',
           embeds: [embed]
         });
 
-        console.log("Discord notification sent successfully");
+        console.log("Discord notification sent");
       } catch (webhookError) {
         console.error("Failed to send Discord webhook:", webhookError.message);
-        // Don't fail the order if webhook fails
       }
     }
 
-    // Here you would typically save to a database
-    // For now, we'll just return success
     const orderId = Date.now();
     
     res.json({ 
@@ -470,42 +414,13 @@ app.post("/api/orders", requireAuth, async (req, res) => {
   }
 });
 
-// Get user orders (protected)
-app.get("/api/orders", requireAuth, (req, res) => {
-  const userId = req.session.user.id;
-  // In a real app, you'd fetch from database
-  res.json({
-    orders: [],
-    message: "No orders found for this user"
-  });
-});
-
-// Admin endpoints (owner/manager only)
-app.get("/api/admin/orders", requireAuth, (req, res) => {
-  if (req.session.role !== "owner" && req.session.role !== "manager") {
-    return res.status(403).json({ error: "Insufficient permissions" });
-  }
-  
-  // Return all orders (in real app, from database)
-  res.json({
-    totalOrders: 0,
-    pending: 0,
-    completed: 0,
-    orders: []
-  });
-});
-
 // Health check endpoint
-app.get("/health", (req, res) => {
+app.get("/api/health", (req, res) => {
   res.json({ 
     status: "healthy",
-    service: "GTA V Dealership Auth Server",
+    service: "GTA V Showroom",
     timestamp: new Date().toISOString(),
-    discord: {
-      clientId: DISCORD_CLIENT_ID ? "Configured" : "Missing",
-      guildId: DISCORD_GUILD_ID ? "Configured" : "Missing",
-      botToken: DISCORD_BOT_TOKEN ? "Configured" : "Missing"
-    }
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
@@ -518,31 +433,5 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`
-  🚗 GTA V Dealership Auth Server
-  ==================================
-  📡 Server running on: http://localhost:${PORT}
-  🔗 Frontend URL: ${FRONTEND_URL}
-  🔐 Discord OAuth: ${DISCORD_CLIENT_ID ? "Configured" : "NOT CONFIGURED"}
-  👥 Discord Server: ${DISCORD_GUILD_ID || "NOT CONFIGURED"}
-  
-  📝 Available Endpoints:
-  - GET  /health                - Health check
-  - GET  /login                 - Discord OAuth login
-  - GET  /callback              - OAuth callback
-  - GET  /logout                - Logout
-  - GET  /api/auth/status       - Check auth status
-  - GET  /api/vehicles          - Get vehicles
-  - POST /api/orders            - Submit order
-  - GET  /api/orders            - Get user orders
-  - GET  /api/admin/orders      - Admin orders view
-  
-  ⚠️  Make sure to:
-  1. Set up .env file with Discord credentials
-  2. Run frontend on ${FRONTEND_URL}
-  3. Configure Discord bot with correct permissions
-  ==================================
-  `);
-});
+// Export for Netlify Functions
+module.exports.handler = serverless(app);

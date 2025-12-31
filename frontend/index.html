@@ -1800,8 +1800,8 @@
         // ==============================
         // CONFIGURATION
         // ==============================
-        const API_BASE_URL = 'http://localhost:3001';
-        const MODEL_BASE_PATH = './models/gta/';
+        const API_BASE_URL = window.location.origin;
+        const MODEL_BASE_PATH = '/models/gta/';
         
         // Application State
         let selectedVehicle = null;
@@ -1845,6 +1845,18 @@
         // ==============================
         document.addEventListener('DOMContentLoaded', function() {
             console.log("🚗 Initializing GTA V Premium Showroom with GLTF models...");
+            
+            // Check URL parameters for login status
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('login') === 'success') {
+                showMessage('success', 'Successfully logged in!');
+                // Remove query parameters
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+            if (urlParams.get('logout') === 'success') {
+                showMessage('info', 'Successfully logged out');
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
             
             // Initialize components
             initAuth();
@@ -3115,17 +3127,17 @@
         // EVENT LISTENERS
         // ==============================
         function initEventListeners() {
-            // Auth buttons
+            // Auth buttons - UPDATED FOR NETLIFY
             document.getElementById('loginBtn').addEventListener('click', () => {
-                window.location.href = `${API_BASE_URL}/login`;
+                window.location.href = `${API_BASE_URL}/api/login`;
             });
             
             document.getElementById('modalLoginBtn').addEventListener('click', () => {
-                window.location.href = `${API_BASE_URL}/login`;
+                window.location.href = `${API_BASE_URL}/api/login`;
             });
             
             document.getElementById('logoutBtn').addEventListener('click', () => {
-                window.location.href = `${API_BASE_URL}/logout`;
+                window.location.href = `${API_BASE_URL}/api/logout`;
             });
             
             document.getElementById('loginOverlay').addEventListener('click', (e) => {

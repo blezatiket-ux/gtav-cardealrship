@@ -1,0 +1,23 @@
+[build]
+  publish = "../frontend"
+  functions = "functions"
+  command = "npm install"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/server/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[functions]
+  node_bundle = true
+  external_node_modules = ["express", "axios", "express-session", "cors", "memorystore"]
+
+[dev]
+  port = 8888
+  publish = "../frontend"
+  functions = "functions"
