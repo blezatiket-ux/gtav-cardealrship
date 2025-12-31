@@ -14,6 +14,5 @@
     "cors": "^2.8.5",
     "memorystore": "^1.6.7",
     "serverless-http": "^3.0.3"
-    // REMOVED: "dotenv": "^16.3.1" - Not needed for Netlify
   }
 }

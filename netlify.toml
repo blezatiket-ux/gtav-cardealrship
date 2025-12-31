@@ -15,4 +15,4 @@
 [functions]
   
   [functions.node_bundle]
-  external_node_modules = ["express", "axios", "express-session", "cors", "memorystore", "serverless-http", "dotenv"]
+  external_node_modules = ["express", "axios", "express-session", "cors", "memorystore", "serverless-http"]
