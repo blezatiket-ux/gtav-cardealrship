@@ -13,7 +13,8 @@
   status = 200
 
 [functions]
-  node_bundle = true
+  
+  [functions.node_bundle]
   external_node_modules = ["express", "axios", "express-session", "cors", "memorystore", "serverless-http"]
 
 [dev]
